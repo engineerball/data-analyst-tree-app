@@ -1580,6 +1580,7 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
       app.update();
     },
     onResetProgress: () => {
+      if (state.shared) return;
       if (state.confirmArm !== 'reset') {
         state.confirmArm = 'reset';
         app.update();
