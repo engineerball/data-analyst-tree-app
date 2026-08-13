@@ -17,7 +17,7 @@ export function loadDone(storage: StorageLike, validIds: ReadonlySet<string>): S
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as Partial<Stored> | null;
-    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.done)) return new Set();
+    if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || !Array.isArray(parsed.done)) return new Set();
     return new Set(parsed.done.filter((d): d is string => typeof d === 'string' && validIds.has(d)));
   } catch {
     return new Set();

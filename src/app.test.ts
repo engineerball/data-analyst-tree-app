@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { init } from './app';
 import { encodeShareHash } from './share';
 import { STORAGE_KEY, type StorageLike } from './state';
@@ -94,5 +94,50 @@ describe('app integration', () => {
     const { root } = mount();
     (root.querySelector('[data-id="join"]') as HTMLButtonElement).click();
     expect(root.querySelector('.panel h2')!.textContent).toBe('Join tables');
+  });
+
+  it('auto-disarms a pending confirm after 4 seconds', () => {
+    vi.useFakeTimers();
+    try {
+      const { root, storage } = mount();
+      btn(root, '#toggleDone').click();
+      btn(root, '#resetProgress').click();
+      vi.advanceTimersByTime(4100);
+      btn(root, '#resetProgress').click();
+      expect(storage.getItem(STORAGE_KEY)).toContain('types');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders armed confirm label with danger styling', () => {
+    const { root } = mount();
+    btn(root, '#toggleDone').click();
+    btn(root, '#resetProgress').click();
+    const armed = btn(root, '#resetProgress');
+    expect(armed.textContent).toBe('Really erase all progress?');
+    expect(armed.classList.contains('danger')).toBe(true);
+  });
+
+  it('clears a malformed share hash from the URL', () => {
+    const spy = vi.spyOn(history, 'replaceState');
+    mount('#s=!!!garbage!!!');
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('share button label survives a double click', async () => {
+    vi.useFakeTimers();
+    try {
+      const { root } = mount();
+      const share = btn(root, '#share');
+      share.click();
+      await vi.advanceTimersByTimeAsync(200);
+      share.click();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(share.textContent).toBe('Share progress');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

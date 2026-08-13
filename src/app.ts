@@ -27,18 +27,30 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
     }, 4000);
   };
 
+  const disarm = (): void => {
+    clearTimeout(disarmTimer);
+    state.confirmArm = null;
+  };
+
   const clearHash = (): void => {
     if (typeof history !== 'undefined' && typeof location !== 'undefined') {
       history.replaceState(null, '', location.pathname + location.search);
     }
   };
 
+  if (!state.shared && hash.startsWith('#s=')) clearHash();
+
+  const flashTimers = new Map<HTMLButtonElement, { timer: ReturnType<typeof setTimeout>; original: string }>();
   const flash = (button: HTMLButtonElement, text: string): void => {
-    const prev = button.textContent;
+    const pending = flashTimers.get(button);
+    const original = pending?.original ?? button.textContent ?? '';
+    if (pending) clearTimeout(pending.timer);
     button.textContent = text;
-    setTimeout(() => {
-      button.textContent = prev;
+    const timer = setTimeout(() => {
+      button.textContent = original;
+      flashTimers.delete(button);
     }, 1400);
+    flashTimers.set(button, { timer, original });
   };
 
   const copyText = async (button: HTMLButtonElement, text: string, doneLabel: string): Promise<void> => {
@@ -53,17 +65,17 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
   const handlers: Handlers = {
     onSelect: id => {
       state.selected = id;
-      state.confirmArm = null;
+      disarm();
       app.update();
     },
     onSearch: query => {
       state.query = query;
-      state.confirmArm = null;
+      disarm();
       app.update();
     },
     onResetView: () => {
       state.query = '';
-      state.confirmArm = null;
+      disarm();
       state.selected = defaultSelection(concepts, effectiveDone(state));
       app.update();
     },
@@ -82,7 +94,7 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
     },
     onExitView: () => {
       state.shared = null;
-      state.confirmArm = null;
+      disarm();
       clearHash();
       state.selected = defaultSelection(concepts, state.done);
       app.update();
@@ -98,7 +110,7 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
       state.done = new Set(state.shared);
       saveDone(storage, state.done);
       state.shared = null;
-      state.confirmArm = null;
+      disarm();
       clearHash();
       app.update();
     },
@@ -112,11 +124,12 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
       }
       state.done = new Set();
       saveDone(storage, state.done);
-      state.confirmArm = null;
+      disarm();
       app.update();
     },
   };
 
   app = mountApp(root, state, layout, handlers);
   app.update();
+  if (state.shared && typeof window !== 'undefined') window.scrollTo(0, 0);
 }
