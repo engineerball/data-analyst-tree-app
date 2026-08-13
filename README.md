@@ -1,6 +1,6 @@
-# Data Analysis Concept Tree
+# DA Concept Tech Tree
 
-A learning map for data-analysis concepts with prerequisite paths, learner-owned progress, and a copy-to-LLM tutor prompt per concept.
+A dark tech-tree learning map for data-analysis concepts: hop-depth columns, prerequisite paths that light up, learner-owned progress, and a copy-to-Copilot tutor prompt per concept.
 
 Live: https://engineerball.github.io/data-analyst-tree-app/
 
