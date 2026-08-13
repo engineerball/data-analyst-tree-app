@@ -1,34 +1,44 @@
 import type { Concept } from './data';
+import { depthOf } from './graph';
 
 export interface Point {
   x: number;
   y: number;
 }
 
-export interface Layout {
-  pos: ReadonlyMap<string, Point>;
-  width: number;
-  height: number;
-  tiers: number[];
+export interface Column {
+  depth: number;
+  x: number;
+  label: string;
 }
 
-export const NODE_W = 150;
-export const NODE_H = 72;
-export const COL_X0 = 45;
-export const COL_GAP = 235;
-export const ROW_Y0 = 105;
-export const ROW_GAP = 155;
-const PAD_RIGHT = 36;
-const PAD_BOTTOM = 54;
+export interface Layout {
+  pos: ReadonlyMap<string, Point>;
+  depth: ReadonlyMap<string, number>;
+  columns: Column[];
+  width: number;
+  height: number;
+}
+
+export const NODE_W = 204;
+export const NODE_H = 58;
+export const COL_X0 = 36;
+export const COL_GAP = 280;
+export const ROW_Y0 = 96;
+export const ROW_GAP = 76;
+const PAD_RIGHT = 40;
+const PAD_BOTTOM = 48;
 
 export function computeLayout(list: Concept[]): Layout {
-  const tiers = [...new Set(list.map(c => c.tier))].sort((a, b) => a - b);
-  const colOf = new Map(tiers.map((t, i) => [t, i]));
-  const maxRows = Math.max(0, ...tiers.map(t => list.filter(c => c.tier === t).length));
+  const byId: ReadonlyMap<string, Concept> = new Map(list.map(c => [c.id, c]));
+  const depth = depthOf(byId);
+  const depths = [...new Set(depth.values())].sort((a, b) => a - b);
+  const colOf = new Map(depths.map((d, i) => [d, i]));
+  const maxRows = Math.max(0, ...depths.map(d => list.filter(c => depth.get(c.id) === d).length));
   const pos = new Map<string, Point>();
 
-  for (const t of tiers) {
-    const col = list.filter(c => c.tier === t);
+  for (const d of depths) {
+    const col = list.filter(c => depth.get(c.id) === d);
     const keyed = col.map((c, i) => {
       const ys = c.pre
         .map(p => pos.get(p)?.y)
@@ -40,7 +50,7 @@ export function computeLayout(list: Concept[]): Layout {
     const offset = ((maxRows - col.length) * ROW_GAP) / 2;
     keyed.forEach(({ c }, row) => {
       pos.set(c.id, {
-        x: COL_X0 + colOf.get(t)! * COL_GAP,
+        x: COL_X0 + colOf.get(d)! * COL_GAP,
         y: ROW_Y0 + offset + row * ROW_GAP,
       });
     });
@@ -48,8 +58,13 @@ export function computeLayout(list: Concept[]): Layout {
 
   return {
     pos,
-    width: COL_X0 + Math.max(0, tiers.length - 1) * COL_GAP + NODE_W + PAD_RIGHT,
+    depth,
+    columns: depths.map(d => ({
+      depth: d,
+      x: COL_X0 + colOf.get(d)! * COL_GAP,
+      label: d === 1 ? '1 HOP' : `${d} HOPS`,
+    })),
+    width: COL_X0 + Math.max(0, depths.length - 1) * COL_GAP + NODE_W + PAD_RIGHT,
     height: ROW_Y0 + Math.max(0, maxRows - 1) * ROW_GAP + NODE_H + PAD_BOTTOM,
-    tiers,
   };
 }

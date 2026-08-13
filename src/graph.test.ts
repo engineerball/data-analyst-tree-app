@@ -5,13 +5,13 @@ import { depthOf, withPrereqs } from './graph';
 
 const g = (defs: Record<string, string[]>): ReadonlyMap<string, Concept> =>
   new Map(
-    Object.entries(defs).map(([id, pre]) => [id, { id, title: id, tier: 1, cat: '', desc: '', pre }]),
+    Object.entries(defs).map(([id, pre]) => [id, { id, title: id, cat: '', desc: '', pre }]),
   );
 
 describe('withPrereqs', () => {
   it('includes the concept itself and all transitive prerequisites', () => {
     expect(withPrereqs('change', conceptById)).toEqual(
-      new Set(['change', 'group', 'convert', 'aggregate', 'join', 'handle-missing', 'missing', 'types', 'unique', 'dedupe']),
+      new Set(['change', 'group', 'convert', 'aggregate', 'types', 'unique']),
     );
   });
 

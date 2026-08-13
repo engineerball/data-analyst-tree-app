@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { concepts, conceptById } from './data';
 import { computeLayout } from './layout';
-import { matchesQuery, mountApp, promptFor, type AppState, type Handlers } from './ui';
+import { catSlug, matchesQuery, mountApp, promptFor, visibleConcepts, type AppState, type Handlers } from './ui';
 
 const noop: Handlers = {
   onSelect() {},
   onSearch() {},
   onResetView() {},
+  onToggleBonus() {},
   onToggleDone() {},
   onShare() {},
   onCopyPrompt() {},
@@ -23,44 +24,64 @@ function render(partial: Partial<AppState> = {}): HTMLElement {
     done: new Set(),
     shared: null,
     confirmArm: null,
+    bonusVisible: true,
     ...partial,
   };
-  mountApp(root, state, computeLayout(concepts), noop).update();
+  const layoutAll = computeLayout(concepts);
+  const layoutCore = computeLayout(concepts.filter(c => !c.bonus));
+  mountApp(root, state, () => (state.bonusVisible ? layoutAll : layoutCore), noop).update();
   return root;
 }
 
-describe('matchesQuery', () => {
+describe('matchesQuery and catSlug', () => {
   it('matches title case-insensitively', () => {
     expect(matchesQuery(conceptById.get('join')!, 'JOIN')).toBe(true);
-  });
-
-  it('matches description text', () => {
-    expect(matchesQuery(conceptById.get('join')!, 'shared key')).toBe(true);
   });
 
   it('empty query matches everything', () => {
     expect(matchesQuery(conceptById.get('join')!, '')).toBe(true);
   });
+
+  it('slugs the viz category', () => {
+    expect(catSlug('Viz · build')).toBe('viz-build');
+  });
 });
 
 describe('promptFor', () => {
-  it('lists prerequisite titles', () => {
-    expect(promptFor(conceptById.get('aggregate')!)).toContain('Convert types, Handle missing data');
+  it('embeds title, desc, and the bank dataset', () => {
+    const p = promptFor(conceptById.get('change')!);
+    expect(p).toContain('Teach me one concept: Change over time');
+    expect(p).toContain('DUMMY_ID');
   });
 
-  it('says none for roots', () => {
-    expect(promptFor(conceptById.get('types')!)).toContain('prerequisites: none');
+  it('includes the concept task when present', () => {
+    expect(promptFor(conceptById.get('change')!)).toContain('biggest jump in average balance');
   });
 });
 
 describe('rendering', () => {
-  it('renders every concept as a node', () => {
+  it('renders every concept as a node when bonus is visible', () => {
     expect(render().querySelectorAll('.node')).toHaveLength(concepts.length);
   });
 
-  it('renders every prerequisite as an edge', () => {
-    const edgeCount = concepts.reduce((n, c) => n + c.pre.length, 0);
-    expect(render().querySelectorAll('.edge')).toHaveLength(edgeCount);
+  it('hides bonus concepts when bonusVisible is false', () => {
+    const root = render({ bonusVisible: false });
+    expect(root.querySelectorAll('.node')).toHaveLength(concepts.filter(c => !c.bonus).length);
+    expect(root.querySelectorAll('.node.bonus')).toHaveLength(0);
+  });
+
+  it('marks bonus nodes with the bonus class and suffix', () => {
+    const root = render();
+    const bonus = concepts.find(c => c.bonus)!;
+    const el = root.querySelector(`[data-id="${bonus.id}"]`)!;
+    expect(el.classList.contains('bonus')).toBe(true);
+    expect(el.textContent).toContain('· bonus');
+  });
+
+  it('renders hop column labels', () => {
+    const labels = [...render().querySelectorAll('.col-label')].map(l => l.textContent);
+    expect(labels[0]).toBe('1 HOP');
+    expect(labels).toHaveLength(5);
   });
 
   it('marks done nodes', () => {
@@ -69,20 +90,33 @@ describe('rendering', () => {
   });
 });
 
-describe('search dimming', () => {
-  it('dims non-matching nodes but never the selected one', () => {
-    const root = render({ query: 'join', selected: 'types' });
-    const dimmed = [...root.querySelectorAll('.node.dim')].map(n => (n as HTMLElement).dataset.id);
-    expect(dimmed.length).toBeGreaterThan(0);
-    expect(dimmed).not.toContain('join');
-    expect(dimmed).not.toContain('types');
+describe('path dimming', () => {
+  it('dims everything outside the selected prerequisite path', () => {
+    const root = render({ selected: 'change' });
+    const path = ['change', 'group', 'convert', 'aggregate', 'types', 'unique'];
+    for (const id of path) {
+      expect(root.querySelector(`[data-id="${id}"]`)!.classList.contains('dim'), id).toBe(false);
+    }
+    expect(root.querySelector('[data-id="missing"]')!.classList.contains('dim')).toBe(true);
   });
 
-  it('keeps all nodes and edges in the DOM while searching', () => {
-    const root = render({ query: 'join' });
-    const edgeCount = concepts.reduce((n, c) => n + c.pre.length, 0);
+  it('search overrides path dimming', () => {
+    const root = render({ selected: 'types', query: 'join' });
+    expect(root.querySelector('[data-id="join"]')!.classList.contains('dim')).toBe(false);
+    expect(root.querySelector('[data-id="types"]')!.classList.contains('dim')).toBe(false);
     expect(root.querySelectorAll('.node')).toHaveLength(concepts.length);
-    expect(root.querySelectorAll('.edge')).toHaveLength(edgeCount);
+  });
+});
+
+describe('panel', () => {
+  it('shows category and computed tier in the kicker', () => {
+    const root = render({ selected: 'change' });
+    expect(root.querySelector('.panel-kicker')!.textContent).toBe('ANALYSIS · TIER 4');
+  });
+
+  it('lists direct prerequisites as a needs-first line', () => {
+    const root = render({ selected: 'change' });
+    expect(root.querySelector('.needs-first')!.textContent).toBe('Group by · Convert types');
   });
 });
 
@@ -99,5 +133,13 @@ describe('view mode', () => {
     const root = render({ shared: new Set(['missing']), done: new Set(['types']) });
     expect(root.querySelector('[data-id="missing"]')!.classList.contains('done')).toBe(true);
     expect(root.querySelector('[data-id="types"]')!.classList.contains('done')).toBe(false);
+  });
+});
+
+describe('visibleConcepts', () => {
+  it('filters bonus concepts when hidden', () => {
+    const base: AppState = { selected: '', query: '', done: new Set(), shared: null, confirmArm: null, bonusVisible: false };
+    expect(visibleConcepts(base).every(c => !c.bonus)).toBe(true);
+    expect(visibleConcepts({ ...base, bonusVisible: true })).toHaveLength(concepts.length);
   });
 });

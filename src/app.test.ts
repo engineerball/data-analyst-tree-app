@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { init } from './app';
+import { concepts } from './data';
 import { encodeShareHash } from './share';
 import { STORAGE_KEY, type StorageLike } from './state';
 
@@ -38,7 +39,7 @@ describe('app integration', () => {
 
   it('renders all concepts and selects the first not-done concept', () => {
     const { root } = mount();
-    expect(root.querySelectorAll('.node')).toHaveLength(12);
+    expect(root.querySelectorAll('.node')).toHaveLength(concepts.length);
     expect(root.querySelector('.node.active')!.getAttribute('data-id')).toBe('types');
   });
 
@@ -117,6 +118,28 @@ describe('app integration', () => {
     const armed = btn(root, '#resetProgress');
     expect(armed.textContent).toBe('Really erase all progress?');
     expect(armed.classList.contains('danger')).toBe(true);
+  });
+
+  it('bonus toggle hides bonus concepts', () => {
+    const { root } = mount();
+    const bonusCount = concepts.filter(c => c.bonus).length;
+    expect(bonusCount).toBeGreaterThan(0);
+    expect(root.querySelectorAll('.node.bonus')).toHaveLength(bonusCount);
+    const toggle = root.querySelector('#bonusToggle') as HTMLInputElement;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    expect(root.querySelectorAll('.node.bonus')).toHaveLength(0);
+    expect(root.querySelectorAll('.node')).toHaveLength(concepts.length - bonusCount);
+  });
+
+  it('hiding bonus reselects when a bonus concept was selected', () => {
+    const { root } = mount();
+    const bonusId = concepts.find(c => c.bonus)!.id;
+    (root.querySelector(`[data-id="${bonusId}"]`) as HTMLButtonElement).click();
+    const toggle = root.querySelector('#bonusToggle') as HTMLInputElement;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    expect(root.querySelector('.node.active')!.getAttribute('data-id')).toBe('types');
   });
 
   it('clears a malformed share hash from the URL', () => {

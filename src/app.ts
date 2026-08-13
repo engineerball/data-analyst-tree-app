@@ -1,20 +1,23 @@
 import { concepts } from './data';
-import { computeLayout } from './layout';
+import { computeLayout, type Layout } from './layout';
 import { decodeShareHash, encodeShareHash } from './share';
 import { defaultSelection, loadDone, saveDone, type StorageLike } from './state';
-import { effectiveDone, mountApp, promptFor, type App, type AppState, type Handlers } from './ui';
+import { effectiveDone, mountApp, promptFor, visibleConcepts, type App, type AppState, type Handlers } from './ui';
 
 export function init(root: HTMLElement, storage: StorageLike, hash: string, shareBase: string): void {
   const validIds: ReadonlySet<string> = new Set(concepts.map(c => c.id));
-  const layout = computeLayout(concepts);
+  const layoutAll = computeLayout(concepts);
+  const layoutCore = computeLayout(concepts.filter(c => !c.bonus));
+  const getLayout = (): Layout => (state.bonusVisible ? layoutAll : layoutCore);
   const state: AppState = {
     selected: '',
     query: '',
     done: loadDone(storage, validIds),
     shared: decodeShareHash(hash, validIds),
     confirmArm: null,
+    bonusVisible: true,
   };
-  state.selected = defaultSelection(concepts, effectiveDone(state));
+  state.selected = defaultSelection(visibleConcepts(state), effectiveDone(state));
 
   let app: App;
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -76,7 +79,16 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
     onResetView: () => {
       state.query = '';
       disarm();
-      state.selected = defaultSelection(concepts, effectiveDone(state));
+      state.selected = defaultSelection(visibleConcepts(state), effectiveDone(state));
+      app.update();
+    },
+    onToggleBonus: visible => {
+      state.bonusVisible = visible;
+      const vis = visibleConcepts(state);
+      if (!vis.some(c => c.id === state.selected)) {
+        state.selected = defaultSelection(vis, effectiveDone(state));
+      }
+      disarm();
       app.update();
     },
     onToggleDone: id => {
@@ -96,7 +108,7 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
       state.shared = null;
       disarm();
       clearHash();
-      state.selected = defaultSelection(concepts, state.done);
+      state.selected = defaultSelection(visibleConcepts(state), state.done);
       app.update();
     },
     onImportShared: () => {
@@ -129,7 +141,7 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
     },
   };
 
-  app = mountApp(root, state, layout, handlers);
+  app = mountApp(root, state, getLayout, handlers);
   app.update();
   if (state.shared && typeof window !== 'undefined') window.scrollTo(0, 0);
 }
