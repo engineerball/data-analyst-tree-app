@@ -1450,6 +1450,15 @@ describe('app integration', () => {
     expect(storage.getItem(STORAGE_KEY)).not.toContain('types');
   });
 
+  it('selecting a node disarms a pending confirm', () => {
+    const { root, storage } = mount();
+    btn(root, '#toggleDone').click();
+    btn(root, '#resetProgress').click();
+    (root.querySelector('[data-id="join"]') as HTMLButtonElement).click();
+    btn(root, '#resetProgress').click();
+    expect(storage.getItem(STORAGE_KEY)).toContain('types');
+  });
+
   it('selecting a node updates the panel', () => {
     const { root } = mount();
     (root.querySelector('[data-id="join"]') as HTMLButtonElement).click();
@@ -1521,14 +1530,17 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
   const handlers: Handlers = {
     onSelect: id => {
       state.selected = id;
+      state.confirmArm = null;
       app.update();
     },
     onSearch: query => {
       state.query = query;
+      state.confirmArm = null;
       app.update();
     },
     onResetView: () => {
       state.query = '';
+      state.confirmArm = null;
       state.selected = defaultSelection(concepts, effectiveDone(state));
       app.update();
     },
@@ -1676,23 +1688,24 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+      - uses: actions/configure-pages@v6
       - run: npm ci
       - run: npm test
       - run: npm run build
         env:
           BASE_PATH: /data-analyst-tree-app/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
@@ -1704,7 +1717,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 ```
 
 - [ ] **Step 2: Write `README.md`**
@@ -1743,11 +1756,15 @@ gh api -X POST repos/engineerball/data-analyst-tree-app/pages -f 'build_type=wor
 
 Expected: 201 (created) from POST, or POST fails because Pages already exists and PUT returns 204.
 
-- [ ] **Step 4: Commit and push**
+- [ ] **Step 4: Commit, merge to main, push**
+
+The work so far lives on `feat/progress-machinery`; the workflow only triggers on pushes to `main`.
 
 ```bash
 git add .github/workflows/deploy.yml README.md
 git commit -m "ci: deploy to GitHub Pages"
+git switch main
+git merge --ff-only feat/progress-machinery
 git push origin main
 ```
 
