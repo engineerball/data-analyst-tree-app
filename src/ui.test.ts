@@ -108,6 +108,7 @@ describe('path dimming', () => {
     const root = render({ selected: 'types', query: 'join' });
     expect(root.querySelector('[data-id="join"]')!.classList.contains('dim')).toBe(false);
     expect(root.querySelector('[data-id="types"]')!.classList.contains('dim')).toBe(false);
+    expect(root.querySelector('[data-id="missing"]')!.classList.contains('dim')).toBe(true);
     expect(root.querySelectorAll('.node')).toHaveLength(concepts.length);
   });
 });
@@ -121,6 +122,13 @@ describe('panel', () => {
   it('lists direct prerequisites as a needs-first line', () => {
     const root = render({ selected: 'change' });
     expect(root.querySelector('.needs-first')!.textContent).toBe('Group by · Convert types');
+  });
+
+  it('orders the path summary by depth', () => {
+    const root = render({ selected: 'change' });
+    expect(root.querySelector('.path-summary')!.textContent).toBe(
+      'Data types → Unique values → Aggregate → Convert types → Group by → Change over time',
+    );
   });
 });
 

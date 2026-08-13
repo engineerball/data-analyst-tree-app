@@ -200,6 +200,9 @@ function renderPanel(panel: HTMLElement, state: AppState, layout: Layout, h: Han
   const needsFirst = c.pre.length
     ? c.pre.map(p => esc(conceptById.get(p)!.title)).join(' · ')
     : 'No prerequisites';
+  const orderedPath = [...pathSet].sort(
+    (a, b) => (layout.depth.get(a) ?? 0) - (layout.depth.get(b) ?? 0),
+  );
 
   const progressSection = viewOnly
     ? ''
@@ -232,7 +235,7 @@ ${done.has(c.id) ? '<div class="status">Completed</div>' : ''}
 </div>
 <div class="section">
   <h3>Path summary</h3>
-  <p>${[...pathSet].reverse().map(id => esc(conceptById.get(id)!.title)).join(' → ')}</p>
+  <p class="path-summary">${orderedPath.map(id => esc(conceptById.get(id)!.title)).join(' → ')}</p>
 </div>${resetSection}`;
 
   panel.querySelector<HTMLButtonElement>('#toggleDone')?.addEventListener('click', () => h.onToggleDone(c.id));

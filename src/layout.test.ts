@@ -66,4 +66,8 @@ describe('computeLayout', () => {
       expect(core.depth.get(k.id), k.id).toBe(all.depth.get(k.id));
     }
   });
+
+  it('keeps 5 columns when bonus concepts are hidden', () => {
+    expect(computeLayout(concepts.filter(k => !k.bonus)).columns).toHaveLength(5);
+  });
 });
