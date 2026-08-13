@@ -41,7 +41,7 @@ export function visibleConcepts(state: AppState): Concept[] {
 export function matchesQuery(c: Concept, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return `${c.title} ${c.cat} ${c.desc}`.toLowerCase().includes(q);
+  return `${c.title} ${c.cat} ${c.desc} ${c.task ?? ''}`.toLowerCase().includes(q);
 }
 
 export function catSlug(cat: string): string {

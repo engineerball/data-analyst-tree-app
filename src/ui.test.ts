@@ -45,6 +45,10 @@ describe('matchesQuery and catSlug', () => {
   it('slugs the viz category', () => {
     expect(catSlug('Viz · build')).toBe('viz-build');
   });
+
+  it('matches on the task field', () => {
+    expect(matchesQuery(conceptById.get('segment')!, 'quartiles')).toBe(true);
+  });
 });
 
 describe('promptFor', () => {
@@ -141,5 +145,32 @@ describe('visibleConcepts', () => {
     const base: AppState = { selected: '', query: '', done: new Set(), shared: null, confirmArm: null, bonusVisible: false };
     expect(visibleConcepts(base).every(c => !c.bonus)).toBe(true);
     expect(visibleConcepts({ ...base, bonusVisible: true })).toHaveLength(concepts.length);
+  });
+});
+
+describe('edges', () => {
+  const edgeCount = (list: { pre: string[] }[]): number => list.reduce((n, c) => n + c.pre.length, 0);
+
+  it('renders one bezier path per visible prerequisite', () => {
+    const root = render();
+    const paths = root.querySelectorAll('.edge');
+    expect(paths).toHaveLength(edgeCount(concepts));
+    for (const p of paths) {
+      const d = p.getAttribute('d') ?? '';
+      expect(d.startsWith('M ')).toBe(true);
+      expect(d).toContain(' C ');
+    }
+  });
+
+  it('drops bonus edges when bonus is hidden', () => {
+    const root = render({ bonusVisible: false });
+    expect(root.querySelectorAll('.edge')).toHaveLength(edgeCount(concepts.filter(c => !c.bonus)));
+  });
+
+  it('marks exactly the on-path edges active and dims the rest', () => {
+    const root = render({ selected: 'change' });
+    expect(root.querySelectorAll('.edge.active')).toHaveLength(6);
+    expect(root.querySelectorAll('.edge.active.dim')).toHaveLength(0);
+    expect(root.querySelectorAll('.edge:not(.active):not(.dim)')).toHaveLength(0);
   });
 });
