@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { concepts, conceptById } from './data';
+import { trackById, tracks } from './data';
 import { computeLayout } from './layout';
-import { catSlug, matchesQuery, mountApp, promptFor, visibleConcepts, type AppState, type Handlers } from './ui';
+import { matchesQuery, mountApp, promptFor, visibleConcepts, type AppState, type Handlers } from './ui';
+
+const da = trackById.get('data-analyst')!;
+const concepts = da.concepts;
 
 const noop: Handlers = {
+  onSelectTrack() {},
   onSelect() {},
   onSearch() {},
   onResetView() {},
@@ -16,50 +20,72 @@ const noop: Handlers = {
   onResetProgress() {},
 };
 
-function render(partial: Partial<AppState> = {}): HTMLElement {
-  const root = document.createElement('div');
-  const state: AppState = {
+function baseState(partial: Partial<AppState> = {}): AppState {
+  return {
+    trackId: 'data-analyst',
     selected: 'types',
     query: '',
-    done: new Set(),
+    done: new Map(),
     shared: null,
     confirmArm: null,
     bonusVisible: true,
     ...partial,
   };
+}
+
+function render(partial: Partial<AppState> = {}): HTMLElement {
+  const root = document.createElement('div');
+  const state = baseState(partial);
   const layoutAll = computeLayout(concepts);
   const layoutCore = computeLayout(concepts.filter(c => !c.bonus));
   mountApp(root, state, () => (state.bonusVisible ? layoutAll : layoutCore), noop).update();
   return root;
 }
 
-describe('matchesQuery and catSlug', () => {
+describe('matchesQuery', () => {
   it('matches title case-insensitively', () => {
-    expect(matchesQuery(conceptById.get('join')!, 'JOIN')).toBe(true);
+    expect(matchesQuery(da.byId.get('join')!, 'JOIN')).toBe(true);
   });
 
   it('empty query matches everything', () => {
-    expect(matchesQuery(conceptById.get('join')!, '')).toBe(true);
-  });
-
-  it('slugs the viz category', () => {
-    expect(catSlug('Viz · build')).toBe('viz-build');
+    expect(matchesQuery(da.byId.get('join')!, '')).toBe(true);
   });
 
   it('matches on the task field', () => {
-    expect(matchesQuery(conceptById.get('segment')!, 'quartiles')).toBe(true);
+    expect(matchesQuery(da.byId.get('segment')!, 'quartiles')).toBe(true);
   });
 });
 
 describe('promptFor', () => {
-  it('embeds title, desc, and the bank dataset', () => {
-    const p = promptFor(conceptById.get('change')!);
+  it('embeds title, desc, and the track tutor context', () => {
+    const p = promptFor(da.byId.get('change')!, da);
     expect(p).toContain('Teach me one concept: Change over time');
+    expect(p).toContain(da.tutorRole);
     expect(p).toContain('DUMMY_ID');
   });
 
   it('includes the concept task when present', () => {
-    expect(promptFor(conceptById.get('change')!)).toContain('biggest jump in average balance');
+    expect(promptFor(da.byId.get('change')!, da)).toContain('biggest jump in average balance');
+  });
+});
+
+describe('header and track tabs', () => {
+  it('brands the app as AI Learning Tree with the track tagline', () => {
+    const root = render();
+    expect(root.querySelector('h1')!.textContent).toBe('AI Learning Tree');
+    expect(root.querySelector('#tagline')!.textContent).toBe(da.tagline);
+  });
+
+  it('renders one tab per track and marks the active one', () => {
+    const root = render();
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('.track-tab')];
+    expect(tabs.map(t => t.dataset.track)).toEqual(tracks.map(t => t.id));
+    expect(root.querySelector('.track-tab.active')!.getAttribute('data-track')).toBe('data-analyst');
+  });
+
+  it('hides the tabs in shared view', () => {
+    const root = render({ shared: { track: 'data-analyst', done: new Set() } });
+    expect(root.querySelector<HTMLElement>('#trackTabs')!.hidden).toBe(true);
   });
 });
 
@@ -88,9 +114,19 @@ describe('rendering', () => {
     expect(labels).toHaveLength(5);
   });
 
-  it('marks done nodes', () => {
-    const root = render({ done: new Set(['types']) });
+  it('marks done nodes from the active track set', () => {
+    const root = render({ done: new Map([['data-analyst', new Set(['types'])]]) });
     expect(root.querySelector('[data-id="types"]')!.classList.contains('done')).toBe(true);
+  });
+
+  it('colors categories by order of first appearance', () => {
+    const root = render();
+    expect(root.querySelector('[data-id="types"]')!.classList.contains('cat-c0')).toBe(true);
+    expect(root.querySelector('[data-id="filter"]')!.classList.contains('cat-c1')).toBe(true);
+    expect(root.querySelector('[data-id="convert"]')!.classList.contains('cat-c2')).toBe(true);
+    expect(root.querySelector('[data-id="distribution"]')!.classList.contains('cat-c3')).toBe(true);
+    expect(root.querySelector('[data-id="chart-basics"]')!.classList.contains('cat-c4')).toBe(true);
+    expect(root.querySelector('[data-id="verify"]')!.classList.contains('cat-c5')).toBe(true);
   });
 });
 
@@ -134,7 +170,7 @@ describe('panel', () => {
 
 describe('view mode', () => {
   it('shows the banner and hides progress controls', () => {
-    const root = render({ shared: new Set(['types']) });
+    const root = render({ shared: { track: 'data-analyst', done: new Set(['types']) } });
     expect(root.querySelector('.banner')).not.toBeNull();
     expect(root.querySelector('#toggleDone')).toBeNull();
     expect(root.querySelector('#resetProgress')).toBeNull();
@@ -142,7 +178,10 @@ describe('view mode', () => {
   });
 
   it('renders shared done markers instead of local ones', () => {
-    const root = render({ shared: new Set(['missing']), done: new Set(['types']) });
+    const root = render({
+      shared: { track: 'data-analyst', done: new Set(['missing']) },
+      done: new Map([['data-analyst', new Set(['types'])]]),
+    });
     expect(root.querySelector('[data-id="missing"]')!.classList.contains('done')).toBe(true);
     expect(root.querySelector('[data-id="types"]')!.classList.contains('done')).toBe(false);
   });
@@ -150,9 +189,8 @@ describe('view mode', () => {
 
 describe('visibleConcepts', () => {
   it('filters bonus concepts when hidden', () => {
-    const base: AppState = { selected: '', query: '', done: new Set(), shared: null, confirmArm: null, bonusVisible: false };
-    expect(visibleConcepts(base).every(c => !c.bonus)).toBe(true);
-    expect(visibleConcepts({ ...base, bonusVisible: true })).toHaveLength(concepts.length);
+    expect(visibleConcepts(baseState({ bonusVisible: false })).every(c => !c.bonus)).toBe(true);
+    expect(visibleConcepts(baseState({ bonusVisible: true }))).toHaveLength(concepts.length);
   });
 });
 

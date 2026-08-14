@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Concept } from './data';
-import { conceptById } from './data';
+import { trackById } from './data';
 import { depthOf, withPrereqs } from './graph';
+
+const conceptById = trackById.get('data-analyst')!.byId;
 
 const g = (defs: Record<string, string[]>): ReadonlyMap<string, Concept> =>
   new Map(

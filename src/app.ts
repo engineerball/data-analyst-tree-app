@@ -1,19 +1,32 @@
-import { concepts } from './data';
+import { tracks, type TrackId } from './data';
 import { computeLayout, type Layout } from './layout';
 import { decodeShareHash, encodeShareHash } from './share';
-import { defaultSelection, loadDone, saveDone, type StorageLike } from './state';
-import { effectiveDone, mountApp, promptFor, visibleConcepts, type App, type AppState, type Handlers } from './ui';
+import { defaultSelection, loadProgress, saveProgress, type StorageLike } from './state';
+import { activeTrack, effectiveDone, mountApp, promptFor, visibleConcepts, type App, type AppState, type Handlers } from './ui';
 
 export function init(root: HTMLElement, storage: StorageLike, hash: string, shareBase: string): void {
-  const validIds: ReadonlySet<string> = new Set(concepts.map(c => c.id));
-  const layoutAll = computeLayout(concepts);
-  const layoutCore = computeLayout(concepts.filter(c => !c.bonus));
-  const getLayout = (): Layout => (state.bonusVisible ? layoutAll : layoutCore);
+  const layouts = new Map(
+    tracks.map(t => [
+      t.id,
+      {
+        all: computeLayout(t.concepts),
+        core: computeLayout(t.concepts.filter(c => !c.bonus)),
+      },
+    ]),
+  );
+  const getLayout = (): Layout => {
+    const pair = layouts.get(state.trackId)!;
+    return state.bonusVisible ? pair.all : pair.core;
+  };
+
+  const progress = loadProgress(storage, tracks);
+  const shared = decodeShareHash(hash, tracks);
   const state: AppState = {
+    trackId: shared ? shared.track : progress.track,
     selected: '',
     query: '',
-    done: loadDone(storage, validIds),
-    shared: decodeShareHash(hash, validIds),
+    done: progress.done,
+    shared,
     confirmArm: null,
     bonusVisible: true,
   };
@@ -43,6 +56,17 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
 
   if (!state.shared && hash.startsWith('#s=')) clearHash();
 
+  const save = (): void => saveProgress(storage, { track: state.trackId, done: state.done });
+
+  const doneFor = (track: TrackId): Set<string> => {
+    let set = state.done.get(track);
+    if (!set) {
+      set = new Set();
+      state.done.set(track, set);
+    }
+    return set;
+  };
+
   const flashTimers = new Map<HTMLButtonElement, { timer: ReturnType<typeof setTimeout>; original: string }>();
   const flash = (button: HTMLButtonElement, text: string): void => {
     const pending = flashTimers.get(button);
@@ -66,6 +90,15 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
   };
 
   const handlers: Handlers = {
+    onSelectTrack: id => {
+      if (state.shared || state.trackId === id) return;
+      state.trackId = id;
+      state.query = '';
+      disarm();
+      state.selected = defaultSelection(visibleConcepts(state), effectiveDone(state));
+      save();
+      app.update();
+    },
     onSelect: id => {
       state.selected = id;
       disarm();
@@ -93,22 +126,23 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
     },
     onToggleDone: id => {
       if (state.shared) return;
-      if (state.done.has(id)) state.done.delete(id);
-      else state.done.add(id);
-      saveDone(storage, state.done);
+      const done = doneFor(state.trackId);
+      if (done.has(id)) done.delete(id);
+      else done.add(id);
+      save();
       app.update();
     },
     onShare: button => {
-      void copyText(button, shareBase + encodeShareHash(state.done), 'Link copied');
+      void copyText(button, shareBase + encodeShareHash(state.trackId, doneFor(state.trackId)), 'Link copied');
     },
     onCopyPrompt: (concept, button) => {
-      void copyText(button, promptFor(concept), 'Copied');
+      void copyText(button, promptFor(concept, activeTrack(state)), 'Copied');
     },
     onExitView: () => {
       state.shared = null;
       disarm();
       clearHash();
-      state.selected = defaultSelection(visibleConcepts(state), state.done);
+      state.selected = defaultSelection(visibleConcepts(state), effectiveDone(state));
       app.update();
     },
     onImportShared: () => {
@@ -119,9 +153,10 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
         disarmLater();
         return;
       }
-      state.done = new Set(state.shared);
-      saveDone(storage, state.done);
+      state.done.set(state.shared.track, new Set(state.shared.done));
+      state.trackId = state.shared.track;
       state.shared = null;
+      save();
       disarm();
       clearHash();
       app.update();
@@ -134,8 +169,8 @@ export function init(root: HTMLElement, storage: StorageLike, hash: string, shar
         disarmLater();
         return;
       }
-      state.done = new Set();
-      saveDone(storage, state.done);
+      state.done.delete(state.trackId);
+      save();
       disarm();
       app.update();
     },

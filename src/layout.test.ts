@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Concept } from './data';
-import { concepts } from './data';
+import { trackById } from './data';
 import { COL_GAP, COL_X0, ROW_GAP, ROW_Y0, computeLayout } from './layout';
+
+const concepts = trackById.get('data-analyst')!.concepts;
 
 const c = (id: string, pre: string[] = []): Concept => ({ id, title: id, cat: 'T', desc: '', pre });
 

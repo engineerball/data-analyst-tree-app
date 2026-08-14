@@ -1,21 +1,39 @@
+import type { Track, TrackId } from './data';
+
 const PREFIX = '#s=';
 
-interface SharePayload {
-  v: 1;
+export interface ShareData {
+  track: TrackId;
+  done: Set<string>;
+}
+
+interface SharePayloadV2 {
+  v: 2;
+  t: TrackId;
   done: string[];
 }
 
-export function encodeShareHash(done: ReadonlySet<string>): string {
-  const payload: SharePayload = { v: 1, done: [...done].sort() };
+export function encodeShareHash(track: TrackId, done: ReadonlySet<string>): string {
+  const payload: SharePayloadV2 = { v: 2, t: track, done: [...done].sort() };
   return PREFIX + base64UrlEncode(JSON.stringify(payload));
 }
 
-export function decodeShareHash(hash: string, validIds: ReadonlySet<string>): Set<string> | null {
+export function decodeShareHash(hash: string, tracks: readonly Track[]): ShareData | null {
   if (!hash.startsWith(PREFIX)) return null;
   try {
-    const parsed = JSON.parse(base64UrlDecode(hash.slice(PREFIX.length))) as Partial<SharePayload> | null;
-    if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || !Array.isArray(parsed.done)) return null;
-    return new Set(parsed.done.filter((d): d is string => typeof d === 'string' && validIds.has(d)));
+    const parsed = JSON.parse(base64UrlDecode(hash.slice(PREFIX.length))) as {
+      v?: unknown;
+      t?: unknown;
+      done?: unknown;
+    } | null;
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.done)) return null;
+    const trackId = parsed.v === 1 ? 'data-analyst' : parsed.v === 2 ? parsed.t : null;
+    const track = tracks.find(t => t.id === trackId);
+    if (!track) return null;
+    return {
+      track: track.id,
+      done: new Set(parsed.done.filter((d): d is string => typeof d === 'string' && track.byId.has(d))),
+    };
   } catch {
     return null;
   }

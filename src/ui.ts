@@ -1,19 +1,22 @@
-import type { Concept } from './data';
-import { conceptById, concepts } from './data';
+import type { Concept, Track, TrackId } from './data';
+import { trackById, tracks } from './data';
 import { withPrereqs } from './graph';
 import type { Layout } from './layout';
 import { NODE_H, NODE_W } from './layout';
+import type { ShareData } from './share';
 
 export interface AppState {
+  trackId: TrackId;
   selected: string;
   query: string;
-  done: Set<string>;
-  shared: ReadonlySet<string> | null;
+  done: Map<TrackId, Set<string>>;
+  shared: ShareData | null;
   confirmArm: 'import' | 'reset' | null;
   bonusVisible: boolean;
 }
 
 export interface Handlers {
+  onSelectTrack(id: TrackId): void;
   onSelect(id: string): void;
   onSearch(query: string): void;
   onResetView(): void;
@@ -30,12 +33,19 @@ export interface App {
   update(): void;
 }
 
+const EMPTY: ReadonlySet<string> = new Set();
+
+export function activeTrack(state: AppState): Track {
+  return trackById.get(state.trackId)!;
+}
+
 export function effectiveDone(state: AppState): ReadonlySet<string> {
-  return state.shared ?? state.done;
+  return state.shared ? state.shared.done : (state.done.get(state.trackId) ?? EMPTY);
 }
 
 export function visibleConcepts(state: AppState): Concept[] {
-  return state.bonusVisible ? concepts : concepts.filter(c => !c.bonus);
+  const list = activeTrack(state).concepts;
+  return state.bonusVisible ? list : list.filter(c => !c.bonus);
 }
 
 export function matchesQuery(c: Concept, query: string): boolean {
@@ -44,16 +54,17 @@ export function matchesQuery(c: Concept, query: string): boolean {
   return `${c.title} ${c.cat} ${c.desc} ${c.task ?? ''}`.toLowerCase().includes(q);
 }
 
-export function catSlug(cat: string): string {
-  return cat.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-+|-+$/g, '');
+export function promptFor(c: Concept, track: Track): string {
+  const task = c.task ? ` ${c.task}` : '';
+  return `You are my ${track.tutorRole}. Teach me one concept: ${c.title} - ${c.desc} Explain it in plain language, then show a small worked example using ${track.tutorContext}${task} Finish with one small exercise for me on this concept, wait for my answer, then check it.`;
 }
 
-const DATASET =
-  'this bank dataset: 4 tables - customer info (birth date, gender, marital status, salary, career), product holdings, deposit accounts, and monthly average balances - all joinable on DUMMY_ID.';
-
-export function promptFor(c: Concept): string {
-  const task = c.task ? ` ${c.task}` : '';
-  return `You are my patient data-analysis tutor. Teach me one concept: ${c.title} - ${c.desc} Explain it in plain language, then show a small worked example using ${DATASET}${task} Finish with one small exercise for me on this concept, wait for my answer, then check it.`;
+function catIndex(track: Track): Map<string, number> {
+  const index = new Map<string, number>();
+  for (const c of track.concepts) {
+    if (!index.has(c.cat)) index.set(c.cat, index.size);
+  }
+  return index;
 }
 
 function esc(s: string): string {
@@ -70,9 +81,10 @@ export function mountApp(root: HTMLElement, state: AppState, getLayout: () => La
   <div id="banner"></div>
   <header class="topbar">
     <div class="brand">
-      <h1>DA Concept Tech Tree</h1>
-      <p>Click a node → its full prerequisite path lights up. That path is what you're verifying.</p>
+      <h1>AI Learning Tree</h1>
+      <p id="tagline"></p>
     </div>
+    <nav id="trackTabs" class="track-tabs" aria-label="Learning tracks"></nav>
     <div class="top-actions">
       <input id="search" class="search" type="search" placeholder="Search concepts..." aria-label="Search concepts">
       <button id="share" class="btn">Share progress</button>
@@ -102,12 +114,28 @@ export function mountApp(root: HTMLElement, state: AppState, getLayout: () => La
   const update = (): void => {
     const layout = getLayout();
     renderBanner(root.querySelector<HTMLElement>('#banner')!, state, h);
+    root.querySelector<HTMLElement>('#tagline')!.textContent = activeTrack(state).tagline;
+    renderTabs(root.querySelector<HTMLElement>('#trackTabs')!, state, h);
     shareBtn.hidden = state.shared !== null;
     bonusToggle.checked = state.bonusVisible;
+    if (search.value !== state.query) search.value = state.query;
     renderGraph(root.querySelector<HTMLElement>('#graph')!, state, layout, h);
     renderPanel(root.querySelector<HTMLElement>('#panel')!, state, layout, h);
   };
   return { update };
+}
+
+function renderTabs(nav: HTMLElement, state: AppState, h: Handlers): void {
+  nav.hidden = state.shared !== null;
+  nav.innerHTML = tracks
+    .map(
+      t =>
+        `<button class="track-tab${t.id === state.trackId ? ' active' : ''}" data-track="${esc(t.id)}">${esc(t.title)}</button>`,
+    )
+    .join('');
+  nav.querySelectorAll<HTMLButtonElement>('.track-tab').forEach(btn => {
+    btn.addEventListener('click', () => h.onSelectTrack(btn.dataset.track as TrackId));
+  });
 }
 
 function renderBanner(el: HTMLElement, state: AppState, h: Handlers): void {
@@ -135,9 +163,11 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
 
 function renderGraph(graph: HTMLElement, state: AppState, layout: Layout, h: Handlers): void {
   const done = effectiveDone(state);
-  const path = withPrereqs(state.selected, conceptById);
+  const track = activeTrack(state);
+  const path = withPrereqs(state.selected, track.byId);
   const filtering = state.query.trim().length > 0;
   const list = visibleConcepts(state);
+  const cats = catIndex(track);
   const matches = new Set(list.filter(c => matchesQuery(c, state.query)).map(c => c.id));
 
   graph.style.width = `${layout.width}px`;
@@ -166,7 +196,7 @@ function renderGraph(graph: HTMLElement, state: AppState, layout: Layout, h: Han
   const nodes = list
     .map(c => {
       const p = layout.pos.get(c.id)!;
-      const cls = ['node', `cat-${catSlug(c.cat)}`];
+      const cls = ['node', `cat-c${cats.get(c.cat)!}`];
       if (c.bonus) cls.push('bonus');
       if (c.id === state.selected) cls.push('active');
       else if (path.has(c.id)) cls.push('path');
@@ -187,18 +217,19 @@ function renderGraph(graph: HTMLElement, state: AppState, layout: Layout, h: Han
 }
 
 function renderPanel(panel: HTMLElement, state: AppState, layout: Layout, h: Handlers): void {
-  const c = conceptById.get(state.selected);
+  const track = activeTrack(state);
+  const c = track.byId.get(state.selected);
   if (!c) {
     panel.innerHTML = '<div class="empty">Select a concept.</div>';
     return;
   }
   const done = effectiveDone(state);
-  const pathSet = withPrereqs(c.id, conceptById);
+  const pathSet = withPrereqs(c.id, track.byId);
   const viewOnly = state.shared !== null;
   const resetArming = state.confirmArm === 'reset';
   const tier = layout.depth.get(c.id) ?? 1;
   const needsFirst = c.pre.length
-    ? c.pre.map(p => esc(conceptById.get(p)!.title)).join(' · ')
+    ? c.pre.map(p => esc(track.byId.get(p)!.title)).join(' · ')
     : 'No prerequisites';
   const orderedPath = [...pathSet].sort(
     (a, b) => (layout.depth.get(a) ?? 0) - (layout.depth.get(b) ?? 0),
@@ -216,7 +247,7 @@ function renderPanel(panel: HTMLElement, state: AppState, layout: Layout, h: Han
     ? ''
     : `
 <div class="section">
-  <button id="resetProgress" class="btn small${resetArming ? ' danger' : ''}">${resetArming ? 'Really erase all progress?' : 'Reset all progress'}</button>
+  <button id="resetProgress" class="btn small${resetArming ? ' danger' : ''}">${resetArming ? 'Really erase this track&#39;s progress?' : 'Reset track progress'}</button>
 </div>`;
 
   panel.innerHTML = `
@@ -230,12 +261,12 @@ ${done.has(c.id) ? '<div class="status">Completed</div>' : ''}
 </div>${progressSection}
 <div class="section">
   <h3>Tutor prompt (copy → paste into Copilot)</h3>
-  <div class="prompt">${esc(promptFor(c))}</div>
+  <div class="prompt">${esc(promptFor(c, track))}</div>
   <button id="copy" class="btn accent">Copy prompt</button>
 </div>
 <div class="section">
   <h3>Path summary</h3>
-  <p class="path-summary">${orderedPath.map(id => esc(conceptById.get(id)!.title)).join(' → ')}</p>
+  <p class="path-summary">${orderedPath.map(id => esc(track.byId.get(id)!.title)).join(' → ')}</p>
 </div>${resetSection}`;
 
   panel.querySelector<HTMLButtonElement>('#toggleDone')?.addEventListener('click', () => h.onToggleDone(c.id));
